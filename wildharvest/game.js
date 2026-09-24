@@ -28,6 +28,7 @@
   const seed = saved?.seed ?? (Math.random() * 0xffffffff) >>> 0;
   const tiles = new Map();
   const keys = new Set();
+  const touchKeys = new Set();
   const collected = new Set(saved?.collected);
   const fruitCounts = saved?.fruitCounts ?? { apple: 0, orange: 0, blueberry: 0 };
   const player = { x: saved?.player.x ?? 8, y: saved?.player.y ?? 8, direction: saved?.player.direction ?? 'down', moving: false };
@@ -126,10 +127,11 @@
 
   function update(dt) {
     let dx = 0, dy = 0;
-    if (keys.has('arrowleft') || keys.has('a')) dx--;
-    if (keys.has('arrowright') || keys.has('d')) dx++;
-    if (keys.has('arrowup') || keys.has('w')) dy--;
-    if (keys.has('arrowdown') || keys.has('s')) dy++;
+    const pressed = key => keys.has(key) || touchKeys.has(key);
+    if (pressed('arrowleft') || pressed('a')) dx--;
+    if (pressed('arrowright') || pressed('d')) dx++;
+    if (pressed('arrowup') || pressed('w')) dy--;
+    if (pressed('arrowdown') || pressed('s')) dy++;
     player.moving = focused && !!(dx || dy);
     if (!player.moving) return;
     if (Math.abs(dx) > Math.abs(dy)) player.direction = dx < 0 ? 'left' : 'right';
@@ -232,8 +234,23 @@
     if (movementKeys.has(key)) { event.preventDefault(); keys.add(key); }
   });
   addEventListener('keyup', event => keys.delete(event.key.toLowerCase()));
-  addEventListener('blur', () => { focused = false; keys.clear(); });
+  function clearInputs() { keys.clear(); touchKeys.clear(); }
+  addEventListener('blur', () => { focused = false; clearInputs(); });
   addEventListener('focus', () => focused = true);
+  document.addEventListener('visibilitychange', () => {
+    focused = !document.hidden;
+    if (document.hidden) clearInputs();
+    else lastTime = performance.now();
+  });
+  document.querySelectorAll('.controls button').forEach(button => {
+    button.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      button.setPointerCapture(event.pointerId);
+      touchKeys.add(button.dataset.key);
+    });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+      button.addEventListener(type, () => touchKeys.delete(button.dataset.key));
+  });
   addEventListener('pagehide', saveProgress);
   document.querySelector('#clear-progress').addEventListener('click', () => {
     if (!confirm('Clear all progress and start a new game?')) return;
@@ -242,6 +259,8 @@
   });
 
   function selfCheck() {
+    const controls = [...document.querySelectorAll('.controls button')];
+    console.assert(controls.length === 4 && controls.every(button => movementKeys.has(button.dataset.key)), 'Touch controls must map to movement keys');
     console.assert(getTile(0, 0) === getTile(0, 0), 'Tile lookup must be stable');
     console.assert(terrainAt(0, 0) === 'grass' && !getTile(0, 0).tree, 'Spawn must be safe');
     console.assert(['grass', 'forest', 'water', 'mud'].includes(terrainAt(100, 100)), 'Terrain must be valid');

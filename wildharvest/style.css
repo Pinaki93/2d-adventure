@@ -1,0 +1,51 @@
+:root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+* { box-sizing: border-box; }
+body {
+  min-height: 100vh; min-height: 100dvh; margin: 0; display: grid; place-items: center;
+  background: #17202a; color: #f8e7b0;
+}
+main {
+  width: min(960px, 100%); padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); text-align: center;
+}
+.game { position: relative; border: 4px solid #5e3b24; box-shadow: 0 12px 40px #0008; background: #203f4a; }
+canvas {
+  display: block; width: 100%; aspect-ratio: 16 / 9; image-rendering: pixelated;
+  image-rendering: crisp-edges; outline: 0;
+}
+.hud {
+  position: absolute; top: 5px; left: 5px; display: flex; gap: 8px;
+  padding: 4px 7px; background: #17202add; border: 1px solid #f8e7b077;
+  color: white; font-size: clamp(9px, 1.8vw, 14px); pointer-events: none;
+}
+p { margin: 10px 0 0; font-size: clamp(11px, 2vw, 15px); }
+kbd { padding: 1px 4px; border: 1px solid #f8e7b0; border-radius: 3px; }
+.controls, .touch-hint { display: none; }
+button {
+  margin-top: 10px; padding: 5px 9px; border: 1px solid #f8e7b0; border-radius: 3px;
+  background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+button:hover, button:focus-visible { background: #f8e7b022; }
+
+@media (any-pointer: coarse) {
+  .controls {
+    display: grid; grid-template: repeat(2, 52px) / repeat(3, 52px); justify-content: center;
+    gap: 4px; margin-top: 12px; touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  .controls button { margin: 0; padding: 0; font-size: 22px; -webkit-tap-highlight-color: transparent; }
+  .controls button:active { background: #f8e7b044; }
+  .up { grid-column: 2; }
+  .left { grid-area: 2 / 1; }
+  .down { grid-area: 2 / 2; }
+  .right { grid-area: 2 / 3; }
+  .touch-hint { display: inline; }
+  .keyboard-hint { display: none; }
+}
+
+@media (any-pointer: coarse) and (orientation: landscape) and (max-height: 600px) {
+  main { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; }
+  .game { grid-row: 1 / 4; width: min(100%, calc(177.78dvh - 43px)); justify-self: center; }
+  .controls { grid-column: 2; margin: 0; }
+  p { grid-column: 2; max-width: 180px; margin: 0; }
+  #clear-progress { grid-column: 2; margin: 0; justify-self: center; }
+}
