@@ -27,6 +27,12 @@ button {
 }
 button:hover, button:focus-visible { background: #f8e7b022; }
 
+@media (any-pointer: coarse), (max-width: 600px) {
+  main { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+  .game { flex: 1; min-height: 0; }
+  canvas { height: 100%; aspect-ratio: auto; }
+}
+
 @media (any-pointer: coarse) {
   .controls {
     display: grid; grid-template: repeat(2, 52px) / repeat(3, 52px); justify-content: center;
@@ -40,12 +46,4 @@ button:hover, button:focus-visible { background: #f8e7b022; }
   .right { grid-area: 2 / 3; }
   .touch-hint { display: inline; }
   .keyboard-hint { display: none; }
-}
-
-@media (any-pointer: coarse) and (orientation: landscape) and (max-height: 600px) {
-  main { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; }
-  .game { grid-row: 1 / 4; width: min(100%, calc(177.78dvh - 43px)); justify-self: center; }
-  .controls { grid-column: 2; margin: 0; }
-  p { grid-column: 2; max-width: 180px; margin: 0; }
-  #clear-progress { grid-column: 2; margin: 0; justify-self: center; }
 }

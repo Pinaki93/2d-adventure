@@ -39,6 +39,19 @@
 
   ctx.imageSmoothingEnabled = false;
 
+  function viewSize(width, height) {
+    if (!width || !height) return [320, 180];
+    return width / height >= 16 / 9 ? [Math.round(180 * width / height), 180] : [320, Math.round(320 * height / width)];
+  }
+
+  new ResizeObserver(([entry]) => {
+    const [width, height] = viewSize(entry.contentRect.width, entry.contentRect.height);
+    if (canvas.width === width && canvas.height === height) return;
+    canvas.width = width;
+    canvas.height = height;
+    ctx.imageSmoothingEnabled = false;
+  }).observe(canvas);
+
   function hash(x, y, salt = 0) {
     let n = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ seed ^ salt;
     n = Math.imul(n ^ (n >>> 13), 1274126177);
@@ -261,6 +274,7 @@
   function selfCheck() {
     const controls = [...document.querySelectorAll('.controls button')];
     console.assert(controls.length === 4 && controls.every(button => movementKeys.has(button.dataset.key)), 'Touch controls must map to movement keys');
+    console.assert(viewSize(180, 320).join() === '320,569' && viewSize(640, 180).join() === '640,180', 'Responsive view must preserve scale and its minimum size');
     console.assert(getTile(0, 0) === getTile(0, 0), 'Tile lookup must be stable');
     console.assert(terrainAt(0, 0) === 'grass' && !getTile(0, 0).tree, 'Spawn must be safe');
     console.assert(['grass', 'forest', 'water', 'mud'].includes(terrainAt(100, 100)), 'Terrain must be valid');
