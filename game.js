@@ -1,0 +1,203 @@
+(() => {
+  'use strict';
+
+  const canvas = document.querySelector('#game');
+  const ctx = canvas.getContext('2d');
+  const TILE = 16;
+  const seed = (Math.random() * 0xffffffff) >>> 0;
+  const tiles = new Map();
+  const keys = new Set();
+  const fruitCounts = { apple: 0, orange: 0, blueberry: 0 };
+  const player = { x: 8, y: 8, direction: 'down', moving: false };
+  let focused = true;
+  let lastTime = performance.now();
+  let walkTime = 0;
+
+  ctx.imageSmoothingEnabled = false;
+
+  function hash(x, y, salt = 0) {
+    let n = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ seed ^ salt;
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+    return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+  }
+
+  function smooth(t) { return t * t * (3 - 2 * t); }
+
+  function noise(x, y, scale, salt = 0) {
+    x /= scale; y /= scale;
+    const x0 = Math.floor(x), y0 = Math.floor(y);
+    const tx = smooth(x - x0), ty = smooth(y - y0);
+    const a = hash(x0, y0, salt), b = hash(x0 + 1, y0, salt);
+    const c = hash(x0, y0 + 1, salt), d = hash(x0 + 1, y0 + 1, salt);
+    return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+  }
+
+  function terrainAt(x, y) {
+    if (x * x + y * y < 36) return 'grass';
+    const land = noise(x, y, 13, 11) * .7 + noise(x, y, 5, 29) * .3;
+    const road = Math.abs(noise(x, y, 19, 71) - .5);
+    if (road < .035) return 'mud';
+    if (land < .31) return 'water';
+    if (land > .61) return 'forest';
+    return 'grass';
+  }
+
+  function makeTile(x, y) {
+    const terrain = terrainAt(x, y);
+    const safe = x * x + y * y < 36;
+    const tree = terrain === 'forest' && !safe && hash(x, y, 101) < .25;
+    let fruit = null;
+    if (terrain === 'forest' && !tree && hash(x, y, 202) < .075) {
+      const kinds = ['apple', 'orange', 'blueberry'];
+      fruit = kinds[Math.floor(hash(x, y, 303) * kinds.length)];
+    }
+    return { terrain, tree, fruit };
+  }
+
+  function getTile(x, y) {
+    const key = `${x},${y}`;
+    if (!tiles.has(key)) tiles.set(key, makeTile(x, y));
+    return tiles.get(key);
+  }
+
+  function blocked(x, y) {
+    const r = 4;
+    return [[x-r,y-r], [x+r,y-r], [x-r,y+r], [x+r,y+r]].some(([px, py]) =>
+      getTile(Math.floor(px / TILE), Math.floor(py / TILE)).tree
+    );
+  }
+
+  function collectAt(x, y) {
+    const tile = getTile(Math.floor(x / TILE), Math.floor(y / TILE));
+    if (!tile.fruit) return false;
+    fruitCounts[tile.fruit]++;
+    tile.fruit = null;
+    for (const kind in fruitCounts) document.querySelector(`#${kind}`).textContent = fruitCounts[kind];
+    document.querySelector('#total').textContent = Object.values(fruitCounts).reduce((a, b) => a + b, 0);
+    return true;
+  }
+
+  function update(dt) {
+    let dx = 0, dy = 0;
+    if (keys.has('arrowleft') || keys.has('a')) dx--;
+    if (keys.has('arrowright') || keys.has('d')) dx++;
+    if (keys.has('arrowup') || keys.has('w')) dy--;
+    if (keys.has('arrowdown') || keys.has('s')) dy++;
+    player.moving = focused && !!(dx || dy);
+    if (!player.moving) return;
+    if (Math.abs(dx) > Math.abs(dy)) player.direction = dx < 0 ? 'left' : 'right';
+    else player.direction = dy < 0 ? 'up' : 'down';
+    const length = Math.hypot(dx, dy);
+    const terrain = getTile(Math.floor(player.x / TILE), Math.floor(player.y / TILE)).terrain;
+    const speed = (terrain === 'mud' ? 30 : 48) * dt / length;
+    const nx = player.x + dx * speed, ny = player.y + dy * speed;
+    if (!blocked(nx, player.y)) player.x = nx;
+    if (!blocked(player.x, ny)) player.y = ny;
+    walkTime += dt;
+    collectAt(player.x, player.y);
+  }
+
+  const colors = { grass: '#77a64b', forest: '#47783e', water: '#397ca3', mud: '#9a6940' };
+
+  function drawTile(tile, x, y, tx, ty) {
+    ctx.fillStyle = colors[tile.terrain];
+    ctx.fillRect(x, y, TILE, TILE);
+    const speck = hash(tx, ty, 404);
+    ctx.fillStyle = tile.terrain === 'water' ? '#68aec2' : '#ffffff18';
+    ctx.fillRect(x + 2 + Math.floor(speck * 9), y + 3 + Math.floor(speck * 7), tile.terrain === 'water' ? 6 : 2, 1);
+    if (tile.tree) {
+      ctx.fillStyle = '#5b3825'; ctx.fillRect(x + 7, y + 9, 3, 6);
+      ctx.fillStyle = '#183f2c'; ctx.fillRect(x + 3, y + 2, 11, 9);
+      ctx.fillStyle = '#2d6540'; ctx.fillRect(x + 5, y + 1, 7, 3);
+    }
+    if (tile.fruit) drawFruit(tile.fruit, x + 8, y + 9);
+  }
+
+  function drawFruit(kind, x, y) {
+    ctx.fillStyle = kind === 'apple' ? '#d94b3d' : kind === 'orange' ? '#f49b31' : '#493c9f';
+    if (kind === 'blueberry') {
+      ctx.fillRect(x - 4, y - 2, 3, 3); ctx.fillRect(x, y - 3, 3, 3); ctx.fillRect(x - 1, y + 1, 3, 3);
+    } else ctx.fillRect(x - 3, y - 3, 6, 6);
+    ctx.fillStyle = '#214d2e'; ctx.fillRect(x, y - 5, 3, 2);
+  }
+
+  function drawPlayer(x, y, boating) {
+    const step = player.moving && Math.floor(walkTime * 8) % 2;
+    if (boating) {
+      ctx.save(); ctx.translate(x, y);
+      if (player.direction === 'left') ctx.rotate(Math.PI / 2);
+      if (player.direction === 'right') ctx.rotate(-Math.PI / 2);
+      if (player.direction === 'down') ctx.rotate(Math.PI);
+      if (player.moving) {
+        ctx.fillStyle = '#9bd2dc';
+        ctx.fillRect(-5, 9 + step, 3, 1); ctx.fillRect(2, 10 - step, 4, 1);
+      }
+      ctx.fillStyle = '#472d22';
+      ctx.fillRect(-2, -12, 4, 2); ctx.fillRect(-4, -10, 8, 2);
+      ctx.fillRect(-6, -8, 12, 12); ctx.fillRect(-5, 4, 10, 3); ctx.fillRect(-3, 7, 6, 2);
+      ctx.fillStyle = '#b66b32';
+      ctx.fillRect(-2, -10, 4, 2); ctx.fillRect(-4, -8, 8, 11); ctx.fillRect(-3, 3, 6, 3);
+      ctx.fillStyle = '#e0a24c';
+      ctx.fillRect(-4, -7, 2, 9); ctx.fillRect(2, -7, 2, 9); ctx.fillRect(-1, -9, 2, 3);
+      ctx.fillStyle = '#3f68a8'; ctx.fillRect(-3, -2, 6, 5);
+      ctx.fillStyle = '#f0c89c'; ctx.fillRect(-3, -7, 6, 5);
+      ctx.fillStyle = '#593923'; ctx.fillRect(-3, -8, 6, 2);
+      const paddleX = step ? -7 : 6;
+      ctx.fillStyle = '#e4c083'; ctx.fillRect(paddleX, -4, 1, 10);
+      ctx.fillStyle = '#8b512d'; ctx.fillRect(paddleX - 1, 5, 3, 4);
+      ctx.restore(); return;
+    }
+    ctx.fillStyle = '#2b2533';
+    ctx.fillRect(x - 4, y + 3, 3, 5 + step); ctx.fillRect(x + 1, y + 3 + step, 3, 5 - step);
+    ctx.fillStyle = '#3f68a8'; ctx.fillRect(x - 5, y - 3, 10, 8);
+    ctx.fillStyle = '#f0c89c'; ctx.fillRect(x - 4, y - 10, 8, 7);
+    ctx.fillStyle = '#593923'; ctx.fillRect(x - 5, y - 11, 10, 3);
+    ctx.fillStyle = '#2b2533';
+    if (player.direction === 'left') ctx.fillRect(x - 5, y - 7, 2, 2);
+    else if (player.direction === 'right') ctx.fillRect(x + 3, y - 7, 2, 2);
+    else if (player.direction === 'up') ctx.fillRect(x - 3, y - 11, 6, 2);
+    else { ctx.fillRect(x - 3, y - 7, 2, 2); ctx.fillRect(x + 1, y - 7, 2, 2); }
+  }
+
+  function render() {
+    const cameraX = Math.round(player.x - canvas.width / 2);
+    const cameraY = Math.round(player.y - canvas.height / 2);
+    const left = Math.floor(cameraX / TILE) - 1, top = Math.floor(cameraY / TILE) - 1;
+    const right = Math.floor((cameraX + canvas.width) / TILE) + 1;
+    const bottom = Math.floor((cameraY + canvas.height) / TILE) + 1;
+    for (let ty = top; ty <= bottom; ty++) for (let tx = left; tx <= right; tx++)
+      drawTile(getTile(tx, ty), tx * TILE - cameraX, ty * TILE - cameraY, tx, ty);
+    const water = getTile(Math.floor(player.x / TILE), Math.floor(player.y / TILE)).terrain === 'water';
+    drawPlayer(Math.round(player.x - cameraX), Math.round(player.y - cameraY), water);
+  }
+
+  function frame(now) {
+    const dt = Math.min((now - lastTime) / 1000, .05);
+    lastTime = now;
+    update(dt); render(); requestAnimationFrame(frame);
+  }
+
+  const movementKeys = new Set(['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'w', 'a', 's', 'd']);
+  addEventListener('keydown', event => {
+    const key = event.key.toLowerCase();
+    if (movementKeys.has(key)) { event.preventDefault(); keys.add(key); }
+  });
+  addEventListener('keyup', event => keys.delete(event.key.toLowerCase()));
+  addEventListener('blur', () => { focused = false; keys.clear(); });
+  addEventListener('focus', () => focused = true);
+
+  function selfCheck() {
+    console.assert(getTile(0, 0) === getTile(0, 0), 'Tile lookup must be stable');
+    console.assert(terrainAt(0, 0) === 'grass' && !getTile(0, 0).tree, 'Spawn must be safe');
+    console.assert(['grass', 'forest', 'water', 'mud'].includes(terrainAt(100, 100)), 'Terrain must be valid');
+    const tile = getTile(1, 1), oldFruit = tile.fruit, before = Object.values(fruitCounts).reduce((a, b) => a + b, 0);
+    tile.fruit = 'apple'; collectAt(TILE + 8, TILE + 8); collectAt(TILE + 8, TILE + 8);
+    console.assert(Object.values(fruitCounts).reduce((a, b) => a + b, 0) === before + 1, 'Collection must be idempotent');
+    fruitCounts.apple--; tile.fruit = oldFruit;
+    for (const kind in fruitCounts) document.querySelector(`#${kind}`).textContent = fruitCounts[kind];
+    document.querySelector('#total').textContent = Object.values(fruitCounts).reduce((a, b) => a + b, 0);
+  }
+
+  selfCheck();
+  requestAnimationFrame(frame);
+})();

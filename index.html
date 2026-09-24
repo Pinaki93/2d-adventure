@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fruit Trail</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <section class="game" aria-label="Fruit Trail game">
+      <canvas id="game" width="320" height="180" tabindex="0">
+        Your browser needs Canvas support to play Fruit Trail.
+      </canvas>
+      <div class="hud" aria-live="polite">
+        <span>🍎 <b id="apple">0</b></span>
+        <span>🍊 <b id="orange">0</b></span>
+        <span>🫐 <b id="blueberry">0</b></span>
+        <span>Total <b id="total">0</b></span>
+      </div>
+    </section>
+    <p>Move with <kbd>WASD</kbd> or <kbd>arrow keys</kbd> · Explore the wilds and collect fruit</p>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
