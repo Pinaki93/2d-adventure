@@ -5,18 +5,24 @@
   const ctx = canvas.getContext('2d');
   const TILE = 16;
   const SAVE_KEY = 'fruit-trail-save-v2';
+  const CAMP = { x: 8, y: 8, radius: 20 };
+  const fruitKinds = ['apple', 'orange', 'blueberry'];
   const directions = ['up', 'down', 'left', 'right'];
+
+  function validSave(save) {
+    return [2, 3].includes(save?.version) && Number.isInteger(save.seed) && save.seed >= 0 && save.seed <= 0xffffffff &&
+      Number.isFinite(save.player?.x) && Number.isFinite(save.player?.y) && directions.includes(save.player?.direction) &&
+      fruitKinds.every(kind => Number.isInteger(save.fruitCounts?.[kind]) && save.fruitCounts[kind] >= 0) &&
+      Array.isArray(save.collected) && save.collected.every(key => /^-?\d+,-?\d+$/.test(key)) &&
+      (save.version === 2 || Number.isInteger(save.ordersCompleted) && save.ordersCompleted >= 0);
+  }
 
   function loadProgress() {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return null;
       const save = JSON.parse(raw);
-      const valid = save?.version === 2 && Number.isInteger(save.seed) && save.seed >= 0 && save.seed <= 0xffffffff &&
-        Number.isFinite(save.player?.x) && Number.isFinite(save.player?.y) && directions.includes(save.player?.direction) &&
-        ['apple', 'orange', 'blueberry'].every(kind => Number.isInteger(save.fruitCounts?.[kind]) && save.fruitCounts[kind] >= 0) &&
-        Array.isArray(save.collected) && save.collected.every(key => /^-?\d+,-?\d+$/.test(key));
-      if (valid) return save;
+      if (validSave(save)) return save;
       localStorage.removeItem(SAVE_KEY);
     } catch (error) {
       console.warn('Could not load saved progress.', error);
@@ -32,6 +38,9 @@
   const collected = new Set(saved?.collected);
   const fruitCounts = saved?.fruitCounts ?? { apple: 0, orange: 0, blueberry: 0 };
   const player = { x: saved?.player.x ?? 8, y: saved?.player.y ?? 8, direction: saved?.player.direction ?? 'down', moving: false };
+  let ordersCompleted = saved?.ordersCompleted ?? 0;
+  let campVisited = Math.hypot(player.x - CAMP.x, player.y - CAMP.y) <= CAMP.radius;
+  let deliveryTimeout;
   let focused = true;
   let lastTime = performance.now();
   let walkTime = 0;
@@ -119,18 +128,45 @@
     return true;
   }
 
+  function orderFor(completed) {
+    const amount = 2 + Math.floor(completed / 3);
+    return Object.fromEntries(fruitKinds.map((kind, index) => [kind, amount + (index === completed % fruitKinds.length)]));
+  }
+
+  function deliver(insideCamp, notify = true) {
+    if (!insideCamp) { campVisited = false; return false; }
+    if (campVisited) return false;
+    campVisited = true;
+    const order = orderFor(ordersCompleted);
+    if (!fruitKinds.every(kind => fruitCounts[kind] >= order[kind])) return false;
+    fruitKinds.forEach(kind => fruitCounts[kind] -= order[kind]);
+    ordersCompleted++;
+    if (notify) {
+      updateHud();
+      const feedback = document.querySelector('#delivery');
+      feedback.classList.add('visible');
+      clearTimeout(deliveryTimeout);
+      deliveryTimeout = setTimeout(() => feedback.classList.remove('visible'), 1600);
+      saveProgress();
+    }
+    return true;
+  }
+
   function updateHud() {
     for (const kind in fruitCounts) document.querySelector(`#${kind}`).textContent = fruitCounts[kind];
-    document.querySelector('#total').textContent = Object.values(fruitCounts).reduce((a, b) => a + b, 0);
+    const order = orderFor(ordersCompleted);
+    fruitKinds.forEach(kind => document.querySelector(`#${kind}-needed`).textContent = order[kind]);
+    document.querySelector('#orders-completed').textContent = ordersCompleted;
   }
 
   function saveProgress() {
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({
-        version: 2,
+        version: 3,
         seed,
         player: { x: player.x, y: player.y, direction: player.direction },
         fruitCounts,
+        ordersCompleted,
         collected: [...collected]
       }));
     } catch (error) {
@@ -157,6 +193,7 @@
     if (!blocked(player.x, ny)) player.y = ny;
     walkTime += dt;
     if (collectAt(player.x, player.y)) saveProgress();
+    deliver(Math.hypot(player.x - CAMP.x, player.y - CAMP.y) <= CAMP.radius);
     saveTime += dt;
     if (saveTime >= 1) { saveTime = 0; saveProgress(); }
   }
@@ -223,6 +260,14 @@
     else { ctx.fillRect(x - 3, y - 7, 2, 2); ctx.fillRect(x + 1, y - 7, 2, 2); }
   }
 
+  function drawCamp(x, y) {
+    ctx.fillStyle = '#e7c36a';
+    ctx.beginPath(); ctx.arc(x, y, CAMP.radius, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c66a3d';
+    ctx.beginPath(); ctx.moveTo(x - 12, y + 8); ctx.lineTo(x, y - 10); ctx.lineTo(x + 12, y + 8); ctx.fill();
+    ctx.fillStyle = '#763d2b'; ctx.fillRect(x - 12, y + 8, 24, 3);
+  }
+
   function render() {
     const cameraX = Math.round(player.x - canvas.width / 2);
     const cameraY = Math.round(player.y - canvas.height / 2);
@@ -231,8 +276,13 @@
     const bottom = Math.floor((cameraY + canvas.height) / TILE) + 1;
     for (let ty = top; ty <= bottom; ty++) for (let tx = left; tx <= right; tx++)
       drawTile(getTile(tx, ty), tx * TILE - cameraX, ty * TILE - cameraY, tx, ty);
+    drawCamp(Math.round(CAMP.x - cameraX), Math.round(CAMP.y - cameraY));
     const water = getTile(Math.floor(player.x / TILE), Math.floor(player.y / TILE)).terrain === 'water';
     drawPlayer(Math.round(player.x - cameraX), Math.round(player.y - cameraY), water);
+    const angle = Math.atan2(CAMP.y - player.y, CAMP.x - player.x);
+    const arrows = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
+    const distance = Math.round(Math.hypot(player.x - CAMP.x, player.y - CAMP.y) / TILE);
+    document.querySelector('#camp-direction').textContent = `${distance ? arrows[Math.round(angle / (Math.PI / 4) + 8) % 8] : '●'} ${distance}m`;
   }
 
   function frame(now) {
@@ -278,12 +328,25 @@
     console.assert(getTile(0, 0) === getTile(0, 0), 'Tile lookup must be stable');
     console.assert(terrainAt(0, 0) === 'grass' && !getTile(0, 0).tree, 'Spawn must be safe');
     console.assert(['grass', 'forest', 'water', 'mud'].includes(terrainAt(100, 100)), 'Terrain must be valid');
+    console.assert(JSON.stringify(orderFor(0)) === '{"apple":3,"orange":2,"blueberry":2}' &&
+      JSON.stringify(orderFor(1)) === '{"apple":2,"orange":3,"blueberry":2}' &&
+      JSON.stringify(orderFor(3)) === '{"apple":4,"orange":3,"blueberry":3}', 'Orders must rotate and scale deterministically');
+    console.assert(validSave({ version: 2, seed: 1, player: { x: 8, y: 8, direction: 'down' },
+      fruitCounts: { apple: 1, orange: 2, blueberry: 3 }, collected: ['1,-2'] }), 'Version 2 saves must remain valid');
     const tile = getTile(1, 1), oldFruit = tile.fruit, wasCollected = collected.has('1,1');
     const before = Object.values(fruitCounts).reduce((a, b) => a + b, 0);
     tile.fruit = 'apple'; collectAt(TILE + 8, TILE + 8); collectAt(TILE + 8, TILE + 8);
     console.assert(Object.values(fruitCounts).reduce((a, b) => a + b, 0) === before + 1, 'Collection must be idempotent');
     fruitCounts.apple--; tile.fruit = oldFruit;
     if (!wasCollected) collected.delete('1,1');
+    const oldCounts = { ...fruitCounts }, oldCompleted = ordersCompleted, oldVisited = campVisited;
+    Object.assign(fruitCounts, { apple: 5, orange: 4, blueberry: 3 }); ordersCompleted = 0; campVisited = false;
+    console.assert(deliver(true, false) && fruitCounts.apple === 2 && fruitCounts.orange === 2 && fruitCounts.blueberry === 1 && ordersCompleted === 1,
+      'Delivery must consume only the order and preserve surplus');
+    console.assert(!deliver(true, false) && ordersCompleted === 1, 'Camp may deliver only once per visit');
+    deliver(false, false); Object.assign(fruitCounts, orderFor(1));
+    console.assert(deliver(true, false) && ordersCompleted === 2, 'Leaving camp must allow another delivery');
+    Object.assign(fruitCounts, oldCounts); ordersCompleted = oldCompleted; campVisited = oldVisited;
     updateHud();
   }
 

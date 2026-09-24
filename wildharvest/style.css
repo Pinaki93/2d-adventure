@@ -14,10 +14,16 @@ canvas {
   image-rendering: crisp-edges; outline: 0;
 }
 .hud {
-  position: absolute; top: 5px; left: 5px; display: flex; gap: 8px;
+  position: absolute; top: 5px; left: 5px; right: 5px; display: flex; flex-wrap: wrap; gap: 3px 10px;
   padding: 4px 7px; background: #17202add; border: 1px solid #f8e7b077;
   color: white; font-size: clamp(9px, 1.8vw, 14px); pointer-events: none;
 }
+.delivery {
+  position: absolute; left: 50%; top: 25%; translate: -50% -50%; padding: 6px 10px;
+  background: #17202add; border: 1px solid #f8e7b0; opacity: 0; pointer-events: none;
+  transition: opacity .2s; white-space: nowrap;
+}
+.delivery.visible { opacity: 1; }
 p { margin: 10px 0 0; font-size: clamp(11px, 2vw, 15px); }
 kbd { padding: 1px 4px; border: 1px solid #f8e7b0; border-radius: 3px; }
 .controls, .touch-hint { display: none; }

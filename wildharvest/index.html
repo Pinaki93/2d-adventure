@@ -16,11 +16,12 @@
         Your browser needs Canvas support to play Wildharvest.
       </canvas>
       <div class="hud" aria-live="polite">
-        <span>🍎 <b id="apple">0</b></span>
-        <span>🍊 <b id="orange">0</b></span>
-        <span>🫐 <b id="blueberry">0</b></span>
-        <span>Total <b id="total">0</b></span>
+        <span>Bag: 🍎 <b id="apple">0</b> 🍊 <b id="orange">0</b> 🫐 <b id="blueberry">0</b></span>
+        <span>Order: 🍎 <b id="apple-needed">0</b> 🍊 <b id="orange-needed">0</b> 🫐 <b id="blueberry-needed">0</b></span>
+        <span>Delivered: <b id="orders-completed">0</b></span>
+        <span>Camp: <b id="camp-direction">● 0m</b></span>
       </div>
+      <div id="delivery" class="delivery" role="status">Order delivered!</div>
     </section>
     <div class="controls" aria-label="Movement controls">
       <button class="up" type="button" data-key="arrowup" aria-label="Move up">▲</button>
@@ -28,7 +29,7 @@
       <button class="down" type="button" data-key="arrowdown" aria-label="Move down">▼</button>
       <button class="right" type="button" data-key="arrowright" aria-label="Move right">▶</button>
     </div>
-    <p>Move with <span class="touch-hint">the D-pad</span><span class="keyboard-hint"><kbd>WASD</kbd> or <kbd>arrow keys</kbd></span> · Explore the wilds and collect fruit</p>
+    <p>Move with <span class="touch-hint">the D-pad</span><span class="keyboard-hint"><kbd>WASD</kbd> or <kbd>arrow keys</kbd></span> · Gather the order, then return to camp</p>
     <button id="clear-progress" type="button">Clear progress</button>
   </main>
   <script src="game.js"></script>
