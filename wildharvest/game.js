@@ -144,6 +144,11 @@
   let caveLock = cavesByLocation.has(`${Math.floor(player.x / TILE)},${Math.floor(player.y / TILE)}`) ?
     `${Math.floor(player.x / TILE)},${Math.floor(player.y / TILE)}` : null;
 
+  function nearestCave(x, y) {
+    return caves.flatMap(cave => [cave.a, cave.b].map(mouth => ({ cave, distance: Math.hypot(x - (mouth.x + .5) * TILE, y - (mouth.y + .5) * TILE) / TILE })))
+      .reduce((nearest, entrance) => entrance.distance < nearest.distance ? entrance : nearest);
+  }
+
   function teleportAt(x, y, save = true) {
     const key = `${Math.floor(x / TILE)},${Math.floor(y / TILE)}`;
     if (caveLock === key) return false;
@@ -341,6 +346,8 @@
     const arrows = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'];
     const distance = Math.round(Math.hypot(player.x - CAMP.x, player.y - CAMP.y) / TILE);
     document.querySelector('#camp-direction').textContent = `${distance ? arrows[Math.round(angle / (Math.PI / 4) + 8) % 8] : '●'} ${distance}m`;
+    const nearest = nearestCave(player.x, player.y);
+    document.querySelector('#cave-distance').textContent = `Cave ${nearest.cave.number}: ${Math.round(nearest.distance)}m`;
   }
 
   function frame(now) {
@@ -389,6 +396,8 @@
     console.assert(JSON.stringify(caves) === JSON.stringify(generateCaves()), 'Cave generation must be deterministic');
     console.assert(caves.length === 6 && new Set(caves.map(cave => cave.number)).size === 6 && cavesByLocation.size === 12,
       'Caves must have six unique numbered pairs and twelve unique mouths');
+    console.assert(nearestCave((caves[0].a.x + .5) * TILE, (caves[0].a.y + .5) * TILE).cave === caves[0],
+      'Nearest cave must identify the cave at its entrance');
     console.assert(caves.every(cave => [cave.a, cave.b].every(mouth => {
       const tile = makeTile(mouth.x, mouth.y);
       return tile.terrain !== 'water' && !tile.tree && !tile.fruit;
