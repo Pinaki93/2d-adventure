@@ -17,3 +17,8 @@ canvas {
 }
 p { margin: 10px 0 0; font-size: clamp(11px, 2vw, 15px); }
 kbd { padding: 1px 4px; border: 1px solid #f8e7b0; border-radius: 3px; }
+button {
+  margin-top: 10px; padding: 5px 9px; border: 1px solid #f8e7b0; border-radius: 3px;
+  background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+button:hover, button:focus-visible { background: #f8e7b022; }

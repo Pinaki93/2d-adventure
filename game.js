@@ -4,14 +4,37 @@
   const canvas = document.querySelector('#game');
   const ctx = canvas.getContext('2d');
   const TILE = 16;
-  const seed = (Math.random() * 0xffffffff) >>> 0;
+  const SAVE_KEY = 'fruit-trail-save-v2';
+  const directions = ['up', 'down', 'left', 'right'];
+
+  function loadProgress() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return null;
+      const save = JSON.parse(raw);
+      const valid = save?.version === 2 && Number.isInteger(save.seed) && save.seed >= 0 && save.seed <= 0xffffffff &&
+        Number.isFinite(save.player?.x) && Number.isFinite(save.player?.y) && directions.includes(save.player?.direction) &&
+        ['apple', 'orange', 'blueberry'].every(kind => Number.isInteger(save.fruitCounts?.[kind]) && save.fruitCounts[kind] >= 0) &&
+        Array.isArray(save.collected) && save.collected.every(key => /^-?\d+,-?\d+$/.test(key));
+      if (valid) return save;
+      localStorage.removeItem(SAVE_KEY);
+    } catch (error) {
+      console.warn('Could not load saved progress.', error);
+    }
+    return null;
+  }
+
+  const saved = loadProgress();
+  const seed = saved?.seed ?? (Math.random() * 0xffffffff) >>> 0;
   const tiles = new Map();
   const keys = new Set();
-  const fruitCounts = { apple: 0, orange: 0, blueberry: 0 };
-  const player = { x: 8, y: 8, direction: 'down', moving: false };
+  const collected = new Set(saved?.collected);
+  const fruitCounts = saved?.fruitCounts ?? { apple: 0, orange: 0, blueberry: 0 };
+  const player = { x: saved?.player.x ?? 8, y: saved?.player.y ?? 8, direction: saved?.player.direction ?? 'down', moving: false };
   let focused = true;
   let lastTime = performance.now();
   let walkTime = 0;
+  let saveTime = 0;
 
   ctx.imageSmoothingEnabled = false;
 
@@ -56,7 +79,11 @@
 
   function getTile(x, y) {
     const key = `${x},${y}`;
-    if (!tiles.has(key)) tiles.set(key, makeTile(x, y));
+    if (!tiles.has(key)) {
+      const tile = makeTile(x, y);
+      if (collected.has(key)) tile.fruit = null;
+      tiles.set(key, tile);
+    }
     return tiles.get(key);
   }
 
@@ -68,13 +95,33 @@
   }
 
   function collectAt(x, y) {
-    const tile = getTile(Math.floor(x / TILE), Math.floor(y / TILE));
+    const tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    const tile = getTile(tx, ty);
     if (!tile.fruit) return false;
     fruitCounts[tile.fruit]++;
     tile.fruit = null;
+    collected.add(`${tx},${ty}`);
+    updateHud();
+    return true;
+  }
+
+  function updateHud() {
     for (const kind in fruitCounts) document.querySelector(`#${kind}`).textContent = fruitCounts[kind];
     document.querySelector('#total').textContent = Object.values(fruitCounts).reduce((a, b) => a + b, 0);
-    return true;
+  }
+
+  function saveProgress() {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        version: 2,
+        seed,
+        player: { x: player.x, y: player.y, direction: player.direction },
+        fruitCounts,
+        collected: [...collected]
+      }));
+    } catch (error) {
+      console.warn('Could not save progress.', error);
+    }
   }
 
   function update(dt) {
@@ -94,7 +141,9 @@
     if (!blocked(nx, player.y)) player.x = nx;
     if (!blocked(player.x, ny)) player.y = ny;
     walkTime += dt;
-    collectAt(player.x, player.y);
+    if (collectAt(player.x, player.y)) saveProgress();
+    saveTime += dt;
+    if (saveTime >= 1) { saveTime = 0; saveProgress(); }
   }
 
   const colors = { grass: '#77a64b', forest: '#47783e', water: '#397ca3', mud: '#9a6940' };
@@ -185,19 +234,27 @@
   addEventListener('keyup', event => keys.delete(event.key.toLowerCase()));
   addEventListener('blur', () => { focused = false; keys.clear(); });
   addEventListener('focus', () => focused = true);
+  addEventListener('pagehide', saveProgress);
+  document.querySelector('#clear-progress').addEventListener('click', () => {
+    if (!confirm('Clear all progress and start a new game?')) return;
+    try { localStorage.removeItem(SAVE_KEY); } catch (error) { console.warn('Could not clear saved progress.', error); }
+    location.reload();
+  });
 
   function selfCheck() {
     console.assert(getTile(0, 0) === getTile(0, 0), 'Tile lookup must be stable');
     console.assert(terrainAt(0, 0) === 'grass' && !getTile(0, 0).tree, 'Spawn must be safe');
     console.assert(['grass', 'forest', 'water', 'mud'].includes(terrainAt(100, 100)), 'Terrain must be valid');
-    const tile = getTile(1, 1), oldFruit = tile.fruit, before = Object.values(fruitCounts).reduce((a, b) => a + b, 0);
+    const tile = getTile(1, 1), oldFruit = tile.fruit, wasCollected = collected.has('1,1');
+    const before = Object.values(fruitCounts).reduce((a, b) => a + b, 0);
     tile.fruit = 'apple'; collectAt(TILE + 8, TILE + 8); collectAt(TILE + 8, TILE + 8);
     console.assert(Object.values(fruitCounts).reduce((a, b) => a + b, 0) === before + 1, 'Collection must be idempotent');
     fruitCounts.apple--; tile.fruit = oldFruit;
-    for (const kind in fruitCounts) document.querySelector(`#${kind}`).textContent = fruitCounts[kind];
-    document.querySelector('#total').textContent = Object.values(fruitCounts).reduce((a, b) => a + b, 0);
+    if (!wasCollected) collected.delete('1,1');
+    updateHud();
   }
 
+  updateHud();
   selfCheck();
   requestAnimationFrame(frame);
 })();
