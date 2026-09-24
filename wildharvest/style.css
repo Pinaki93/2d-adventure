@@ -1,5 +1,5 @@
 :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
 body {
   min-height: 100vh; min-height: 100dvh; margin: 0; display: grid; place-items: center;
   background: #17202a; color: #f8e7b0;
@@ -42,7 +42,7 @@ button:hover, button:focus-visible { background: #f8e7b022; }
 @media (any-pointer: coarse) {
   .controls {
     display: grid; grid-template: repeat(2, 52px) / repeat(3, 52px); justify-content: center;
-    gap: 4px; margin-top: 12px; touch-action: none; user-select: none; -webkit-user-select: none;
+    gap: 4px; margin-top: 12px; touch-action: none;
   }
   .controls button { margin: 0; padding: 0; font-size: 22px; -webkit-tap-highlight-color: transparent; }
   .controls button:active { background: #f8e7b044; }
