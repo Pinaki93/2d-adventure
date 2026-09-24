@@ -110,6 +110,53 @@
     return tiles.get(key);
   }
 
+  function generateCaves() {
+    let state = seed ^ 0x9e3779b9;
+    const random = () => {
+      state |= 0; state = state + 0x6D2B79F5 | 0;
+      let n = Math.imul(state ^ state >>> 15, 1 | state);
+      n = n + Math.imul(n ^ n >>> 7, 61 | n) ^ n;
+      return ((n ^ n >>> 14) >>> 0) / 4294967296;
+    };
+    const caves = [], used = new Set();
+    const valid = ({ x, y }) => {
+      const tile = makeTile(x, y);
+      return tile.terrain !== 'water' && !tile.tree && !tile.fruit &&
+        Math.hypot(x * TILE - CAMP.x, y * TILE - CAMP.y) > CAMP.radius + TILE * 3 && !used.has(`${x},${y}`);
+    };
+    while (caves.length < 6) {
+      const a = { x: Math.floor(random() * 513) - 256, y: Math.floor(random() * 513) - 256 };
+      const distance = 80 + Math.floor(random() * 81), angle = random() * Math.PI * 2;
+      const b = { x: a.x + Math.round(Math.cos(angle) * distance), y: a.y + Math.round(Math.sin(angle) * distance) };
+      const actualDistance = Math.hypot(a.x - b.x, a.y - b.y);
+      if (!valid(a) || !valid(b) || actualDistance < 80 || actualDistance > 160) continue;
+      used.add(`${a.x},${a.y}`); used.add(`${b.x},${b.y}`);
+      caves.push({ number: caves.length + 1, a, b });
+    }
+    return caves;
+  }
+
+  const caves = generateCaves();
+  const cavesByLocation = new Map(caves.flatMap(cave => [
+    [`${cave.a.x},${cave.a.y}`, { cave, destination: cave.b }],
+    [`${cave.b.x},${cave.b.y}`, { cave, destination: cave.a }]
+  ]));
+  let caveLock = cavesByLocation.has(`${Math.floor(player.x / TILE)},${Math.floor(player.y / TILE)}`) ?
+    `${Math.floor(player.x / TILE)},${Math.floor(player.y / TILE)}` : null;
+
+  function teleportAt(x, y, save = true) {
+    const key = `${Math.floor(x / TILE)},${Math.floor(y / TILE)}`;
+    if (caveLock === key) return false;
+    caveLock = null;
+    const mouth = cavesByLocation.get(key);
+    if (!mouth) return false;
+    player.x = (mouth.destination.x + .5) * TILE;
+    player.y = (mouth.destination.y + .5) * TILE;
+    caveLock = `${mouth.destination.x},${mouth.destination.y}`;
+    if (save) saveProgress();
+    return true;
+  }
+
   function blocked(x, y) {
     const r = 4;
     return [[x-r,y-r], [x+r,y-r], [x-r,y+r], [x+r,y+r]].some(([px, py]) =>
@@ -192,6 +239,7 @@
     if (!blocked(nx, player.y)) player.x = nx;
     if (!blocked(player.x, ny)) player.y = ny;
     walkTime += dt;
+    teleportAt(player.x, player.y);
     if (collectAt(player.x, player.y)) saveProgress();
     deliver(Math.hypot(player.x - CAMP.x, player.y - CAMP.y) <= CAMP.radius);
     saveTime += dt;
@@ -268,6 +316,13 @@
     ctx.fillStyle = '#763d2b'; ctx.fillRect(x - 12, y + 8, 24, 3);
   }
 
+  function drawCave(cave, x, y) {
+    ctx.fillStyle = '#514b50'; ctx.fillRect(x + 1, y + 5, 14, 10);
+    ctx.fillStyle = '#17151a'; ctx.fillRect(x + 4, y + 7, 8, 8);
+    ctx.fillStyle = '#f4df8b'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(cave.number, x + 8, y + 5);
+  }
+
   function render() {
     const cameraX = Math.round(player.x - canvas.width / 2);
     const cameraY = Math.round(player.y - canvas.height / 2);
@@ -276,6 +331,9 @@
     const bottom = Math.floor((cameraY + canvas.height) / TILE) + 1;
     for (let ty = top; ty <= bottom; ty++) for (let tx = left; tx <= right; tx++)
       drawTile(getTile(tx, ty), tx * TILE - cameraX, ty * TILE - cameraY, tx, ty);
+    for (const cave of caves) for (const mouth of [cave.a, cave.b])
+      if (mouth.x >= left && mouth.x <= right && mouth.y >= top && mouth.y <= bottom)
+        drawCave(cave, mouth.x * TILE - cameraX, mouth.y * TILE - cameraY);
     drawCamp(Math.round(CAMP.x - cameraX), Math.round(CAMP.y - cameraY));
     const water = getTile(Math.floor(player.x / TILE), Math.floor(player.y / TILE)).terrain === 'water';
     drawPlayer(Math.round(player.x - cameraX), Math.round(player.y - cameraY), water);
@@ -328,6 +386,14 @@
     console.assert(getTile(0, 0) === getTile(0, 0), 'Tile lookup must be stable');
     console.assert(terrainAt(0, 0) === 'grass' && !getTile(0, 0).tree, 'Spawn must be safe');
     console.assert(['grass', 'forest', 'water', 'mud'].includes(terrainAt(100, 100)), 'Terrain must be valid');
+    console.assert(JSON.stringify(caves) === JSON.stringify(generateCaves()), 'Cave generation must be deterministic');
+    console.assert(caves.length === 6 && new Set(caves.map(cave => cave.number)).size === 6 && cavesByLocation.size === 12,
+      'Caves must have six unique numbered pairs and twelve unique mouths');
+    console.assert(caves.every(cave => [cave.a, cave.b].every(mouth => {
+      const tile = makeTile(mouth.x, mouth.y);
+      return tile.terrain !== 'water' && !tile.tree && !tile.fruit;
+    }) && Math.hypot(cave.a.x - cave.b.x, cave.a.y - cave.b.y) >= 80 &&
+      Math.hypot(cave.a.x - cave.b.x, cave.a.y - cave.b.y) <= 160), 'Cave mouths must be passable and 80-160 tiles apart');
     console.assert(JSON.stringify(orderFor(0)) === '{"apple":3,"orange":2,"blueberry":2}' &&
       JSON.stringify(orderFor(1)) === '{"apple":2,"orange":3,"blueberry":2}' &&
       JSON.stringify(orderFor(3)) === '{"apple":4,"orange":3,"blueberry":3}', 'Orders must rotate and scale deterministically');
@@ -347,6 +413,16 @@
     deliver(false, false); Object.assign(fruitCounts, orderFor(1));
     console.assert(deliver(true, false) && ordersCompleted === 2, 'Leaving camp must allow another delivery');
     Object.assign(fruitCounts, oldCounts); ordersCompleted = oldCompleted; campVisited = oldVisited;
+    const oldPlayer = { ...player }, oldCaveLock = caveLock, cave = caves[0];
+    player.x = (cave.a.x + .5) * TILE; player.y = (cave.a.y + .5) * TILE; caveLock = null;
+    console.assert(teleportAt(player.x, player.y, false) && player.x === (cave.b.x + .5) * TILE &&
+      player.y === (cave.b.y + .5) * TILE && player.direction === oldPlayer.direction,
+      'Either cave mouth must teleport to its partner without changing direction');
+    console.assert(!teleportAt(player.x, player.y, false), 'Arrival must not immediately teleport back');
+    teleportAt(player.x + TILE, player.y, false);
+    console.assert(teleportAt(player.x, player.y, false) && player.x === (cave.a.x + .5) * TILE && player.y === (cave.a.y + .5) * TILE,
+      'Leaving and re-entering a cave must reactivate it');
+    Object.assign(player, oldPlayer); caveLock = oldCaveLock;
     updateHud();
   }
 
