@@ -185,6 +185,12 @@
     return Object.fromEntries(fruitKinds.map((kind, index) => [kind, amount + (index === completed % fruitKinds.length)]));
   }
 
+  function paceFor(completed) { return 1 + Math.min(3, Math.floor(completed / 3)) * .1; }
+
+  function deliveryMessage(completed) {
+    return completed <= 9 && completed % 3 === 0 ? 'Order delivered! Pace upgraded.' : 'Order delivered!';
+  }
+
   function deliver(insideCamp, notify = true) {
     if (!insideCamp) { campVisited = false; return false; }
     if (campVisited) return false;
@@ -196,6 +202,7 @@
     if (notify) {
       updateHud();
       const feedback = document.querySelector('#delivery');
+      feedback.textContent = deliveryMessage(ordersCompleted);
       feedback.classList.add('visible');
       clearTimeout(deliveryTimeout);
       deliveryTimeout = setTimeout(() => feedback.classList.remove('visible'), 1600);
@@ -209,6 +216,7 @@
     const order = orderFor(ordersCompleted);
     fruitKinds.forEach(kind => document.querySelector(`#${kind}-needed`).textContent = order[kind]);
     document.querySelector('#orders-completed').textContent = ordersCompleted;
+    document.querySelector('#pace').textContent = `${Math.round(paceFor(ordersCompleted) * 100)}%`;
   }
 
   function saveProgress() {
@@ -239,7 +247,7 @@
     else player.direction = dy < 0 ? 'up' : 'down';
     const length = Math.hypot(dx, dy);
     const terrain = getTile(Math.floor(player.x / TILE), Math.floor(player.y / TILE)).terrain;
-    const speed = (terrain === 'mud' ? 30 : 48) * dt / length;
+    const speed = (terrain === 'mud' ? 30 : 48) * paceFor(ordersCompleted) * dt / length;
     const nx = player.x + dx * speed, ny = player.y + dy * speed;
     if (!blocked(nx, player.y)) player.x = nx;
     if (!blocked(player.x, ny)) player.y = ny;
@@ -406,8 +414,16 @@
     console.assert(JSON.stringify(orderFor(0)) === '{"apple":3,"orange":2,"blueberry":2}' &&
       JSON.stringify(orderFor(1)) === '{"apple":2,"orange":3,"blueberry":2}' &&
       JSON.stringify(orderFor(3)) === '{"apple":4,"orange":3,"blueberry":3}', 'Orders must rotate and scale deterministically');
+    console.assert([0, 2, 3, 5, 6, 8, 9, 99].map(paceFor).join() === '1,1,1.1,1.1,1.2,1.2,1.3,1.3' &&
+      30 * paceFor(99) < 48 * paceFor(99), 'Pace must upgrade at 3/6/9, cap at 130%, and keep mud slower');
+    console.assert(deliveryMessage(2) === 'Order delivered!' && deliveryMessage(3) === 'Order delivered! Pace upgraded.' &&
+      deliveryMessage(12) === 'Order delivered!', 'Only upgrade deliveries must show pace feedback');
     console.assert(validSave({ version: 2, seed: 1, player: { x: 8, y: 8, direction: 'down' },
       fruitCounts: { apple: 1, orange: 2, blueberry: 3 }, collected: ['1,-2'] }), 'Version 2 saves must remain valid');
+    const existingSave = { version: 3, seed: 1, player: { x: 8, y: 8, direction: 'down' },
+      fruitCounts: { apple: 1, orange: 2, blueberry: 3 }, ordersCompleted: 6, collected: ['1,-2'] };
+    console.assert(validSave(existingSave) && paceFor(existingSave.ordersCompleted) === 1.2,
+      'Existing saves must reconstruct pace from completed deliveries');
     const tile = getTile(1, 1), oldFruit = tile.fruit, wasCollected = collected.has('1,1');
     const before = Object.values(fruitCounts).reduce((a, b) => a + b, 0);
     tile.fruit = 'apple'; collectAt(TILE + 8, TILE + 8); collectAt(TILE + 8, TILE + 8);
@@ -421,6 +437,9 @@
     console.assert(!deliver(true, false) && ordersCompleted === 1, 'Camp may deliver only once per visit');
     deliver(false, false); Object.assign(fruitCounts, orderFor(1));
     console.assert(deliver(true, false) && ordersCompleted === 2, 'Leaving camp must allow another delivery');
+    deliver(false, false); Object.assign(fruitCounts, orderFor(2)); deliver(true, false); updateHud();
+    console.assert(ordersCompleted === 3 && document.querySelector('#pace').textContent === '110%',
+      'Third delivery must immediately upgrade pace and its HUD value');
     Object.assign(fruitCounts, oldCounts); ordersCompleted = oldCompleted; campVisited = oldVisited;
     const oldPlayer = { ...player }, oldCaveLock = caveLock, cave = caves[0];
     player.x = (cave.a.x + .5) * TILE; player.y = (cave.a.y + .5) * TILE; caveLock = null;
